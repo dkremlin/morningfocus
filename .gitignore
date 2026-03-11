@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+.installed.cfg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment secrets — NEVER commit these
+.env
+*.env
+.env.*
+!.env.example
+
+# MorningFocus data — local only
+morningfocus/data/tasks.md
+morningfocus-web/data/tasks.db
+morningfocus-web/data/
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test / coverage artefacts
+.pytest_cache/
+.coverage
+htmlcov/
