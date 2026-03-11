@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app import crud, models
 from app.database import engine, get_db, init_db
 from app.parser import parse_add_string
-from app.schemas import BriefingOut, ParseResult, TaskCreate, TaskOut
+from app.schemas import BriefingOut, ParseResult, TaskCreate, TaskOut, TaskUpdate
 
 app = FastAPI(title="MorningFocus", version="0.1.0")
 
@@ -64,6 +64,14 @@ def parse_task(body: dict, db: Session = Depends(get_db)):
         return parse_add_string(raw)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+
+@app.patch("/api/tasks/{task_id}", response_model=TaskOut)
+def update_task(task_id: int, data: TaskUpdate, db: Session = Depends(get_db)):
+    task = crud.update_task(db, task_id, data)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
 
 
 @app.patch("/api/tasks/{task_id}/done", response_model=TaskOut)

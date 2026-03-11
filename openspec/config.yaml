@@ -1,0 +1,60 @@
+schema: spec-driven
+
+context: |
+  Project: MorningFocus — a local CLI task manager (Python)
+
+  Two versions exist:
+  - morningfocus/      CLI version: Typer + Rich, tasks stored in tasks.md
+  - morningfocus-web/  Web UI version: FastAPI + SQLite
+
+  Tech stack:
+  - Python 3.9, Typer, Rich, python-dateutil, plyer, FastAPI, SQLite
+  - Tests: pytest + pytest-cov (77 tests, ~85% coverage)
+  - No external services — everything is local
+
+  Data storage (CLI):
+  - tasks.md format: `- [status] Description /p:Priority /d:YYYY-MM-DD`
+  - Status: [ ] open, [x] done
+  - Priority: High / Medium / Low (default Medium, omitted if Medium)
+  - Due date: optional, YYYY-MM-DD
+
+  Package structure (morningfocus/):
+  - models.py      Task dataclass, Status/Priority enums
+  - parser.py      regex tag extraction from task strings
+  - storage.py     file I/O with fcntl locking + atomic writes
+  - briefing.py    classify tasks: Overdue / Today / General
+  - cli.py         four CLI commands via Typer + Rich
+  - config.py      tasks.md location (env var → XDG → ~/morningfocus/data/)
+  - notify.py      standalone cron script, plyer notifications
+
+  CLI commands:
+  - mf add "Task /p:High /d:tomorrow"   parse tags, append to tasks.md
+  - mf list --open / --all              show task table
+  - mf done N                           mark open task #N done (1-based, open only)
+  - mf brief [--json] [--exit-nonzero]  morning summary (overdue / today / general)
+
+  Config resolution order for tasks.md:
+  1. MORNINGFOCUS_DATA_DIR env var
+  2. $XDG_DATA_HOME/morningfocus/tasks.md
+  3. ~/morningfocus/data/tasks.md
+
+  Implementation phases:
+  - Phase 1 done: data layer (models, parser, storage, config, exceptions + tests)
+  - Phase 2 done: CLI commands + briefing + tests
+  - Phase 3 done: notify.py with plyer + log fallback + --dry-run
+  - Phase 4 pending: Windows lock compat, concurrency integration test
+
+  Conventions:
+  - .env files are gitignored — never commit secrets
+  - Local data (tasks.md, tasks.db) are gitignored
+  - Architecture is documented in morningfocus/plan.md
+
+rules:
+  proposal:
+    - Stay consistent with the existing Python 3.9 stack
+    - Prefer extending existing modules over creating new ones
+    - Keep the CLI interface simple — no extra flags without a clear need
+  tasks:
+    - Break tasks into small, testable units
+    - Each task should include a test update if it touches business logic
+    - Reference the relevant module (parser, storage, briefing, cli) in the task

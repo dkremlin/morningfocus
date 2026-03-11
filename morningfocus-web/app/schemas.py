@@ -43,6 +43,11 @@ class BriefingOut(BaseModel):
     general: list[TaskOut]
 
 
+class TaskUpdate(BaseModel):
+    due: Optional[date] = None
+    priority: Optional[Priority] = None
+
+
 class ParseResult(BaseModel):
     """Result of parsing a free-text add string."""
     description: str

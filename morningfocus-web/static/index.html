@@ -52,6 +52,31 @@
 
   .header-actions { display: flex; gap: 8px; }
 
+  /* View tabs */
+  .view-tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--surface2);
+    border-radius: 8px;
+    padding: 4px;
+  }
+  .view-tab {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    padding: 6px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .view-tab.active {
+    background: var(--accent);
+    color: #fff;
+  }
+  .view-tab:hover:not(.active) { color: var(--text); }
+
   main { max-width: 900px; margin: 0 auto; padding: 24px 20px; }
 
   /* Briefing bar */
@@ -153,6 +178,7 @@
     flex-wrap: wrap;
   }
   .filter-bar label { color: var(--muted); font-size: 13px; }
+  .filter-sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
   .tab-btn {
     background: transparent;
     border: 1px solid var(--border);
@@ -162,6 +188,21 @@
     font-size: 12px;
   }
   .tab-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--text); }
+
+  /* Priority filter chips */
+  .prio-chip {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .prio-chip.active-all  { background: var(--surface2); border-color: var(--accent); color: var(--text); }
+  .prio-chip.active-High   { background: var(--high-dim); border-color: var(--high); color: var(--high); }
+  .prio-chip.active-Medium { background: var(--med-dim);  border-color: var(--med);  color: var(--med); }
+  .prio-chip.active-Low    { background: var(--low-dim);  border-color: var(--low);  color: var(--low); }
 
   /* Task table */
   .task-table { width: 100%; border-collapse: collapse; }
@@ -195,6 +236,20 @@
   .due-overdue { color: var(--high); font-weight: 600; }
   .due-today   { color: var(--med); font-weight: 600; }
 
+  /* Inline due date edit */
+  .due-cell { cursor: pointer; }
+  .due-cell:hover .due-badge { text-decoration: underline; text-decoration-style: dashed; }
+  .due-edit-input {
+    background: var(--surface2);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    color: var(--text);
+    font-size: 12px;
+    padding: 3px 6px;
+    width: 130px;
+    outline: none;
+  }
+
   .check-btn {
     width: 20px; height: 20px;
     border-radius: 50%;
@@ -221,6 +276,50 @@
   .export-bar { margin-top: 32px; display: flex; gap: 8px; align-items: center; }
   .export-bar span { color: var(--muted); font-size: 13px; }
 
+  /* ── Briefing view ─────────────────────────────────────────────── */
+  .briefing-view { display: none; }
+
+  .briefing-bucket {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+  .briefing-bucket-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .briefing-bucket-header .count {
+    background: var(--surface2);
+    border-radius: 12px;
+    padding: 1px 8px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .bucket-overdue .briefing-bucket-header { color: var(--high); border-bottom-color: var(--high-dim); }
+  .bucket-today   .briefing-bucket-header { color: var(--med);  border-bottom-color: var(--med-dim); }
+  .bucket-general .briefing-bucket-header { color: var(--accent); }
+
+  .briefing-task-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .briefing-task-row:last-child { border-bottom: none; }
+  .briefing-task-row:hover { background: var(--surface2); }
+  .briefing-task-desc { flex: 1; }
+  .briefing-empty { padding: 16px; color: var(--muted); font-size: 13px; text-align: center; }
+
   /* Toast */
   #toast {
     position: fixed;
@@ -246,66 +345,88 @@
 <header>
   <div class="logo">Morning<span>Focus</span></div>
   <div class="header-actions">
+    <!-- View tabs (task 2.1) -->
+    <div class="view-tabs">
+      <button class="view-tab active" id="tabTasks"    onclick="showView('tasks')">Tasks</button>
+      <button class="view-tab"        id="tabBriefing" onclick="showView('briefing')">Briefing</button>
+    </div>
     <button class="btn-ghost" onclick="refreshAll()">↻ Refresh</button>
   </div>
 </header>
 
 <main>
 
-  <!-- Briefing chips -->
+  <!-- Briefing chips (always visible) -->
   <div class="brief-bar" id="briefBar">
     <div class="brief-chip">Loading briefing…</div>
   </div>
 
-  <!-- Add task form -->
-  <div class="add-form">
-    <h2>Add Task</h2>
-    <div class="parse-preview" id="parsePreview">Type a task below. You can use tags: /p:High  /d:tomorrow</div>
-    <div class="input-row">
-      <input type="text" class="main-input" id="taskInput"
-             placeholder='e.g. "Fix login bug /p:High /d:tomorrow"'
-             autocomplete="off"
-             oninput="onTaskInput()"
-             onkeydown="if(event.key==='Enter') addTask()">
-      <select class="priority-sel" id="prioritySel">
-        <option value="Medium">Medium</option>
-        <option value="High">High</option>
-        <option value="Low">Low</option>
-      </select>
-      <input type="date" class="due-input" id="dueInput">
-      <button class="btn-primary" onclick="addTask()">+ Add</button>
+  <!-- ── Tasks view (task 2.2) ─────────────────────────────────── -->
+  <div id="viewTasks">
+
+    <!-- Add task form -->
+    <div class="add-form">
+      <h2>Add Task</h2>
+      <div class="parse-preview" id="parsePreview">Type a task below. You can use tags: /p:High  /d:tomorrow</div>
+      <div class="input-row">
+        <input type="text" class="main-input" id="taskInput"
+               placeholder='e.g. "Fix login bug /p:High /d:tomorrow"'
+               autocomplete="off"
+               oninput="onTaskInput()"
+               onkeydown="if(event.key==='Enter') addTask()">
+        <select class="priority-sel" id="prioritySel">
+          <option value="Medium">Medium</option>
+          <option value="High">High</option>
+          <option value="Low">Low</option>
+        </select>
+        <input type="date" class="due-input" id="dueInput">
+        <button class="btn-primary" onclick="addTask()">+ Add</button>
+      </div>
+      <div class="hint">Tip: Tags in the text override the dropdowns. <code>/p:High</code> sets priority, <code>/d:2026-03-15</code> or <code>/d:tomorrow</code> sets due date.</div>
     </div>
-    <div class="hint">Tip: Tags in the text override the dropdowns. <code>/p:High</code> sets priority, <code>/d:2026-03-15</code> or <code>/d:tomorrow</code> sets due date.</div>
-  </div>
 
-  <!-- Filter bar -->
-  <div class="filter-bar">
-    <button class="tab-btn active" id="tabAll"  onclick="setFilter('all')">All</button>
-    <button class="tab-btn"        id="tabOpen" onclick="setFilter('open')">Open only</button>
-    <button class="tab-btn"        id="tabDone" onclick="setFilter('done')">Done</button>
-  </div>
+    <!-- Filter bar (task 4.2 — priority chips added) -->
+    <div class="filter-bar">
+      <button class="tab-btn active" id="tabAll"  onclick="setFilter('all')">All</button>
+      <button class="tab-btn"        id="tabOpen" onclick="setFilter('open')">Open only</button>
+      <button class="tab-btn"        id="tabDone" onclick="setFilter('done')">Done</button>
+      <div class="filter-sep"></div>
+      <button class="prio-chip active-all" id="prioAll"    onclick="setPriorityFilter('all')">All</button>
+      <button class="prio-chip"            id="prioHigh"   onclick="setPriorityFilter('High')">High</button>
+      <button class="prio-chip"            id="prioMedium" onclick="setPriorityFilter('Medium')">Medium</button>
+      <button class="prio-chip"            id="prioLow"    onclick="setPriorityFilter('Low')">Low</button>
+    </div>
 
-  <!-- Task list -->
-  <table class="task-table" id="taskTable">
-    <thead>
-      <tr>
-        <th style="width:32px"></th>
-        <th>Task</th>
-        <th style="width:90px">Priority</th>
-        <th style="width:110px">Due</th>
-        <th style="width:60px"></th>
-      </tr>
-    </thead>
-    <tbody id="taskBody">
-      <tr><td colspan="5"><div class="empty-state"><p>Loading…</p></div></td></tr>
-    </tbody>
-  </table>
+    <!-- Task list -->
+    <table class="task-table" id="taskTable">
+      <thead>
+        <tr>
+          <th style="width:32px"></th>
+          <th>Task</th>
+          <th style="width:90px">Priority</th>
+          <th style="width:110px">Due</th>
+          <th style="width:60px"></th>
+        </tr>
+      </thead>
+      <tbody id="taskBody">
+        <tr><td colspan="5"><div class="empty-state"><p>Loading…</p></div></td></tr>
+      </tbody>
+    </table>
 
-  <!-- Export -->
-  <div class="export-bar">
-    <span>Export:</span>
-    <button class="btn-secondary" onclick="exportFile('csv')">⬇ CSV</button>
-    <button class="btn-secondary" onclick="exportFile('markdown')">⬇ tasks.md</button>
+    <!-- Export -->
+    <div class="export-bar">
+      <span>Export:</span>
+      <button class="btn-secondary" onclick="exportFile('csv')">⬇ CSV</button>
+      <button class="btn-secondary" onclick="exportFile('markdown')">⬇ tasks.md</button>
+    </div>
+
+  </div><!-- #viewTasks -->
+
+  <!-- ── Briefing view (task 2.2, 3.1–3.5) ───────────────────── -->
+  <div id="viewBriefing" class="briefing-view">
+    <div id="briefingContent">
+      <div class="empty-state"><p>Loading briefing…</p></div>
+    </div>
   </div>
 
 </main>
@@ -317,8 +438,22 @@
 // State
 // ---------------------------------------------------------------------------
 let allTasks = [];
-let filter = 'all';  // 'all' | 'open' | 'done'
+let filter = 'all';          // 'all' | 'open' | 'done'
+let priorityFilter = 'all';  // 'all' | 'High' | 'Medium' | 'Low'  (task 4.1)
+let currentView = 'tasks';   // 'tasks' | 'briefing'
 let parseDebounce = null;
+
+// ---------------------------------------------------------------------------
+// View switching (tasks 2.3, 2.4)
+// ---------------------------------------------------------------------------
+function showView(name) {
+  currentView = name;
+  document.getElementById('viewTasks').style.display    = name === 'tasks'    ? '' : 'none';
+  document.getElementById('viewBriefing').style.display = name === 'briefing' ? '' : 'none';
+  document.getElementById('tabTasks').classList.toggle('active', name === 'tasks');
+  document.getElementById('tabBriefing').classList.toggle('active', name === 'briefing');
+  if (name === 'briefing') loadBriefing();  // task 2.4: always refresh on switch
+}
 
 // ---------------------------------------------------------------------------
 // API helpers
@@ -339,21 +474,75 @@ async function api(method, path, body) {
 }
 
 // ---------------------------------------------------------------------------
-// Briefing
+// Briefing chips bar
+// ---------------------------------------------------------------------------
+function updateBriefingChips(b) {
+  const bar = document.getElementById('briefBar');
+  const today = new Date(b.date + 'T00:00:00');
+  const fmt = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  bar.innerHTML = `
+    <div class="brief-chip" style="color:var(--muted)">📅 ${fmt(today)}</div>
+    <div class="brief-chip overdue">🔴 ${b.overdue.length} overdue</div>
+    <div class="brief-chip today">🟡 ${b.today.length} due today</div>
+    <div class="brief-chip general">📋 ${b.general.length} general</div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Briefing view (tasks 3.1–3.5)
 // ---------------------------------------------------------------------------
 async function loadBriefing() {
   try {
     const b = await api('GET', '/api/brief');
-    const bar = document.getElementById('briefBar');
-    const today = new Date(b.date + 'T00:00:00');
-    const fmt = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-    bar.innerHTML = `
-      <div class="brief-chip" style="color:var(--muted)">📅 ${fmt(today)}</div>
-      <div class="brief-chip overdue">🔴 ${b.overdue.length} overdue</div>
-      <div class="brief-chip today">🟡 ${b.today.length} due today</div>
-      <div class="brief-chip general">📋 ${b.general.length} general</div>
-    `;
+    updateBriefingChips(b);
+    renderBriefing(b);
   } catch(e) { console.error('brief', e); }
+}
+
+function renderBriefing(b) {
+  const buckets = [
+    { key: 'overdue', cls: 'bucket-overdue', icon: '🔴', label: 'Overdue',   tasks: b.overdue },
+    { key: 'today',   cls: 'bucket-today',   icon: '🟡', label: 'Due Today', tasks: b.today },
+    { key: 'general', cls: 'bucket-general', icon: '📋', label: 'General',   tasks: b.general },
+  ];
+
+  const html = buckets.map(({ cls, icon, label, tasks }) => `
+    <div class="briefing-bucket ${cls}">
+      <div class="briefing-bucket-header">
+        ${icon} ${label} <span class="count">${tasks.length}</span>
+      </div>
+      ${tasks.length === 0
+        ? '<div class="briefing-empty">Nothing here</div>'
+        : tasks.map(t => briefingTaskRow(t)).join('')
+      }
+    </div>
+  `).join('');
+
+  document.getElementById('briefingContent').innerHTML = html;
+}
+
+function briefingTaskRow(t) {
+  const dueTxt = t.due ? `<span class="due-badge">${t.due}</span>` : '';
+  return `<div class="briefing-task-row">
+    <button class="check-btn ${t.done ? 'checked' : ''}"
+            title="${t.done ? 'Reopen' : 'Mark done'}"
+            onclick="toggleDoneInBriefing(${t.id}, ${t.done})"></button>
+    <span class="briefing-task-desc">${esc(t.description)}</span>
+    <span class="prio-badge prio-${t.priority}">${t.priority}</span>
+    ${dueTxt}
+  </div>`;
+}
+
+// task 3.5: toggle done from briefing view and refresh briefing
+async function toggleDoneInBriefing(id, isDone) {
+  try {
+    const path = isDone ? `/api/tasks/${id}/reopen` : `/api/tasks/${id}/done`;
+    await api('PATCH', path);
+    await loadBriefing();
+    await loadTasks();  // keep chips in sync
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -368,18 +557,20 @@ async function loadTasks() {
   }
 }
 
+// task 4.5: apply both status filter and priority filter
 function renderTasks() {
   const tbody = document.getElementById('taskBody');
   const today = new Date(); today.setHours(0,0,0,0);
 
   let visible = allTasks;
-  if (filter === 'open') visible = allTasks.filter(t => !t.done);
-  if (filter === 'done') visible = allTasks.filter(t => t.done);
+  if (filter === 'open') visible = visible.filter(t => !t.done);
+  if (filter === 'done') visible = visible.filter(t => t.done);
+  if (priorityFilter !== 'all') visible = visible.filter(t => t.priority === priorityFilter);
 
   if (!visible.length) {
     tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state">
       <p>No tasks here.</p>
-      <small>${filter === 'all' ? 'Add one above.' : 'Try a different filter.'}</small>
+      <small>${filter === 'all' && priorityFilter === 'all' ? 'Add one above.' : 'Try a different filter.'}</small>
     </div></td></tr>`;
     return;
   }
@@ -393,7 +584,8 @@ function renderTasks() {
            onclick="toggleDone(${t.id}, ${t.done})"></button></td>
       <td class="task-desc">${esc(t.description)}</td>
       <td><span class="prio-badge prio-${t.priority}">${t.priority}</span></td>
-      <td>${dueBadge}</td>
+      <td class="due-cell" onclick="editDue(${t.id}, ${JSON.stringify(t.due || '')})"
+          title="Click to edit due date">${dueBadge}</td>
       <td><button class="btn-danger" onclick="deleteTask(${t.id})">✕</button></td>
     </tr>`;
   }).join('');
@@ -415,13 +607,26 @@ function esc(s) {
 }
 
 // ---------------------------------------------------------------------------
-// Filter tabs
+// Status filter tabs
 // ---------------------------------------------------------------------------
 function setFilter(f) {
   filter = f;
   ['All','Open','Done'].forEach(n => {
     const el = document.getElementById('tab' + n);
     el.classList.toggle('active', n.toLowerCase() === f || (f === 'all' && n === 'All'));
+  });
+  renderTasks();
+}
+
+// ---------------------------------------------------------------------------
+// Priority filter (tasks 4.4, 4.5)
+// ---------------------------------------------------------------------------
+function setPriorityFilter(p) {
+  priorityFilter = p;
+  ['all','High','Medium','Low'].forEach(v => {
+    const el = document.getElementById('prio' + (v === 'all' ? 'All' : v));
+    const isActive = v === p;
+    el.className = 'prio-chip' + (isActive ? ' active-' + p : '');
   });
   renderTasks();
 }
@@ -442,7 +647,6 @@ function onTaskInput() {
 async function liveParsePreview(raw) {
   try {
     const r = await api('POST', '/api/tasks/parse', { text: raw });
-    // Sync dropdowns with parsed values
     document.getElementById('prioritySel').value = r.priority;
     if (r.due) document.getElementById('dueInput').value = r.due;
     setPreview(`✓ "${esc(r.description)}"  priority: ${r.priority}${r.due ? '  due: ' + r.due : ''}`, 'ready');
@@ -461,7 +665,6 @@ async function addTask() {
   const raw = document.getElementById('taskInput').value.trim();
   if (!raw) { showToast('Please enter a task description.', 'error'); return; }
 
-  // Parse tags from the text, then override with dropdown values if no tag was found
   let description = raw, priority = document.getElementById('prioritySel').value;
   let due = document.getElementById('dueInput').value || null;
 
@@ -470,9 +673,7 @@ async function addTask() {
     description = parsed.description;
     priority = parsed.priority;
     if (parsed.due) due = parsed.due;
-  } catch(e) {
-    // Use raw description if parse fails
-  }
+  } catch(e) { /* use raw */ }
 
   try {
     await api('POST', '/api/tasks', { description, priority, due: due || null });
@@ -488,7 +689,7 @@ async function addTask() {
 }
 
 // ---------------------------------------------------------------------------
-// Actions
+// Toggle done / delete
 // ---------------------------------------------------------------------------
 async function toggleDone(id, isDone) {
   try {
@@ -512,6 +713,52 @@ async function deleteTask(id) {
 }
 
 // ---------------------------------------------------------------------------
+// Inline due date edit (tasks 5.1–5.5)
+// ---------------------------------------------------------------------------
+function editDue(id, currentDue) {
+  // Find the cell that triggered this
+  const row = document.querySelector(`.task-row[data-id="${id}"]`);
+  if (!row) return;
+  const cell = row.querySelector('.due-cell');
+  const originalHtml = cell.innerHTML;
+
+  const input = document.createElement('input');
+  input.type = 'date';
+  input.className = 'due-edit-input';
+  input.value = currentDue || '';
+  cell.innerHTML = '';
+  cell.appendChild(input);
+  input.focus();
+
+  let saved = false;
+
+  async function save() {
+    if (saved) return;
+    saved = true;
+    const newDue = input.value || null;
+    try {
+      await api('PATCH', `/api/tasks/${id}`, { due: newDue });
+      await refreshAll();
+    } catch(e) {
+      showToast('Error: ' + e.message, 'error');
+      cell.innerHTML = originalHtml;
+    }
+  }
+
+  function cancel() {
+    if (saved) return;
+    saved = true;
+    cell.innerHTML = originalHtml;
+  }
+
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { saved = true; cell.innerHTML = originalHtml; }
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Export
 // ---------------------------------------------------------------------------
 function exportFile(fmt) {
@@ -522,7 +769,12 @@ function exportFile(fmt) {
 // Utilities
 // ---------------------------------------------------------------------------
 async function refreshAll() {
-  await Promise.all([loadTasks(), loadBriefing()]);
+  if (currentView === 'briefing') {
+    await Promise.all([loadTasks(), loadBriefing()]);
+  } else {
+    const b = api('GET', '/api/brief').then(updateBriefingChips).catch(() => {});
+    await Promise.all([loadTasks(), b]);
+  }
 }
 
 let toastTimer;

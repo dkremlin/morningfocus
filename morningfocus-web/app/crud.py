@@ -9,7 +9,7 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from app.models import Task
-from app.schemas import TaskCreate
+from app.schemas import TaskCreate, TaskUpdate
 
 
 def get_tasks(db: Session, include_done: bool = True) -> list[Task]:
@@ -30,6 +30,19 @@ def create_task(db: Session, task_in: TaskCreate) -> Task:
         due=task_in.due,
     )
     db.add(task)
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+def update_task(db: Session, task_id: int, data: TaskUpdate) -> Task | None:
+    task = get_task(db, task_id)
+    if task is None:
+        return None
+    if data.due is not None or "due" in data.model_fields_set:
+        task.due = data.due
+    if data.priority is not None:
+        task.priority = data.priority
     db.commit()
     db.refresh(task)
     return task
