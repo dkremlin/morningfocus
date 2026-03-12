@@ -215,7 +215,8 @@
     }
 
     if (!cfg.supabase_url || !cfg.supabase_anon_key) {
-      setMsg('siMsg', 'Auth not configured — SUPABASE_URL / SUPABASE_ANON_KEY missing.', 'error');
+      // No Supabase configured — running in local mode, skip login entirely.
+      window.location.replace('/');
       return;
     }
 
