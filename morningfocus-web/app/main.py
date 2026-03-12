@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 from dotenv import load_dotenv
-load_dotenv()  # reads morningfocus-web/.env automatically when running locally
+from pathlib import Path as _Path
+load_dotenv(_Path(__file__).parent.parent / ".env")  # morningfocus-web/.env
 
 import csv
 import io
 import os
 from datetime import date
+
+# Fail at startup if critical env vars are missing
+_missing = [v for v in ("SUPABASE_URL", "SUPABASE_ANON_KEY") if not os.environ.get(v)]
+if _missing:
+    raise RuntimeError(
+        f"Missing required environment variables: {', '.join(_missing)}\n"
+        "  • Local: set them in morningfocus-web/.env\n"
+        "  • Vercel: add them in the project dashboard → Settings → Environment Variables"
+    )
 from pathlib import Path
 from typing import Optional
 
@@ -33,9 +43,24 @@ _static = Path(__file__).parent.parent / "static"
 app.mount("/static", StaticFiles(directory=_static), name="static")
 
 
+_db_error: str | None = None
+
 @app.on_event("startup")
 def on_startup() -> None:
-    init_db()
+    global _db_error
+    try:
+        init_db()
+    except Exception as exc:
+        _db_error = str(exc)
+        import traceback, sys
+        traceback.print_exc(file=sys.stderr)
+
+
+@app.get("/api/debug/db", include_in_schema=False)
+def debug_db():
+    from app.database import DB_URL
+    safe_url = DB_URL.split("@")[-1] if "@" in DB_URL else DB_URL
+    return {"db_host": safe_url, "error": _db_error}
 
 
 # ---------------------------------------------------------------------------
