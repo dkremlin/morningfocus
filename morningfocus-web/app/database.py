@@ -17,7 +17,16 @@ _tmp_db = Path("/tmp/morningfocus_tasks.db")
 _default_db = _local_db if os.access(_local_db.parent, os.W_OK) else _tmp_db
 DB_URL = os.environ.get("MORNINGFOCUS_DB", f"sqlite:///{_default_db}")
 
-engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
+# "postgres://" is the old format — SQLAlchemy requires "postgresql://"
+if DB_URL.startswith("postgres://"):
+    DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
+
+_is_sqlite = DB_URL.startswith("sqlite")
+engine = create_engine(
+    DB_URL,
+    connect_args={"check_same_thread": False} if _is_sqlite else {},
+    pool_pre_ping=True,  # reconnects automatically if the connection drops
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -36,6 +45,7 @@ def get_db():
 
 def init_db() -> None:
     """Create all tables if they don't exist yet."""
-    _default_db.parent.mkdir(parents=True, exist_ok=True)
+    if _is_sqlite:
+        _default_db.parent.mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(bind=engine)
 

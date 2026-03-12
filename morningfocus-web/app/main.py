@@ -2,25 +2,33 @@
 
 from __future__ import annotations
 
+from dotenv import load_dotenv
+load_dotenv()  # reads morningfocus-web/.env automatically when running locally
+
 import csv
 import io
 from datetime import date
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from app import crud, models
+from app.auth import require_auth
 from app.database import engine, get_db, init_db
 from app.parser import parse_add_string
 from app.schemas import BriefingOut, ParseResult, TaskCreate, TaskOut, TaskUpdate
 
 app = FastAPI(title="MorningFocus", version="0.1.0")
 
-# Serve the frontend
+# Protected router — every route added here requires a valid Supabase token.
+# The two HTML pages (/ and /login) stay on `app` directly so they are public.
+_api = APIRouter(dependencies=[Depends(require_auth)])
+
+# Serve static assets (CSS, JS, images if any)
 _static = Path(__file__).parent.parent / "static"
 app.mount("/static", StaticFiles(directory=_static), name="static")
 
@@ -31,7 +39,7 @@ def on_startup() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Frontend
+# Frontend (public — no auth needed to load the HTML pages)
 # ---------------------------------------------------------------------------
 
 @app.get("/", response_class=FileResponse, include_in_schema=False)
@@ -39,11 +47,27 @@ def index():
     return str(_static / "index.html")
 
 
+@app.get("/login", response_class=FileResponse, include_in_schema=False)
+def login_page():
+    return str(_static / "login.html")
+
+
+@app.get("/api/config", include_in_schema=False)
+def public_config():
+    """Return the public Supabase keys so the frontend can initialise the JS client.
+    The anon key is intentionally public — it is safe to expose in the browser."""
+    import os
+    return {
+        "supabase_url": os.environ.get("SUPABASE_URL", ""),
+        "supabase_anon_key": os.environ.get("SUPABASE_ANON_KEY", ""),
+    }
+
+
 # ---------------------------------------------------------------------------
-# Tasks API
+# Tasks API  (protected)
 # ---------------------------------------------------------------------------
 
-@app.get("/api/tasks", response_model=list[TaskOut])
+@_api.get("/api/tasks", response_model=list[TaskOut])
 def list_tasks(
     include_done: bool = Query(True, description="Include completed tasks"),
     db: Session = Depends(get_db),
@@ -51,12 +75,12 @@ def list_tasks(
     return crud.get_tasks(db, include_done=include_done)
 
 
-@app.post("/api/tasks", response_model=TaskOut, status_code=201)
+@_api.post("/api/tasks", response_model=TaskOut, status_code=201)
 def add_task(task_in: TaskCreate, db: Session = Depends(get_db)):
     return crud.create_task(db, task_in)
 
 
-@app.post("/api/tasks/parse", response_model=ParseResult)
+@_api.post("/api/tasks/parse", response_model=ParseResult)
 def parse_task(body: dict, db: Session = Depends(get_db)):
     """Parse a free-text string into structured fields (live preview as you type)."""
     raw = body.get("text", "")
@@ -66,7 +90,7 @@ def parse_task(body: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=422, detail=str(e))
 
 
-@app.patch("/api/tasks/{task_id}", response_model=TaskOut)
+@_api.patch("/api/tasks/{task_id}", response_model=TaskOut)
 def update_task(task_id: int, data: TaskUpdate, db: Session = Depends(get_db)):
     task = crud.update_task(db, task_id, data)
     if task is None:
@@ -74,7 +98,7 @@ def update_task(task_id: int, data: TaskUpdate, db: Session = Depends(get_db)):
     return task
 
 
-@app.patch("/api/tasks/{task_id}/done", response_model=TaskOut)
+@_api.patch("/api/tasks/{task_id}/done", response_model=TaskOut)
 def complete_task(task_id: int, db: Session = Depends(get_db)):
     task = crud.mark_done(db, task_id)
     if task is None:
@@ -82,7 +106,7 @@ def complete_task(task_id: int, db: Session = Depends(get_db)):
     return task
 
 
-@app.patch("/api/tasks/{task_id}/reopen", response_model=TaskOut)
+@_api.patch("/api/tasks/{task_id}/reopen", response_model=TaskOut)
 def reopen_task(task_id: int, db: Session = Depends(get_db)):
     task = crud.mark_open(db, task_id)
     if task is None:
@@ -90,17 +114,17 @@ def reopen_task(task_id: int, db: Session = Depends(get_db)):
     return task
 
 
-@app.delete("/api/tasks/{task_id}", status_code=204)
+@_api.delete("/api/tasks/{task_id}", status_code=204)
 def delete_task(task_id: int, db: Session = Depends(get_db)):
     if not crud.delete_task(db, task_id):
         raise HTTPException(status_code=404, detail="Task not found")
 
 
 # ---------------------------------------------------------------------------
-# Briefing API
+# Briefing API  (protected)
 # ---------------------------------------------------------------------------
 
-@app.get("/api/brief", response_model=BriefingOut)
+@_api.get("/api/brief", response_model=BriefingOut)
 def briefing(db: Session = Depends(get_db)):
     today = date.today()
     overdue, due_today, general = crud.get_briefing_tasks(db, today=today)
@@ -113,10 +137,10 @@ def briefing(db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
-# Export API
+# Export API  (protected)
 # ---------------------------------------------------------------------------
 
-@app.get("/api/export/csv")
+@_api.get("/api/export/csv")
 def export_csv(db: Session = Depends(get_db)):
     content = crud.export_csv(db)
     return PlainTextResponse(
@@ -126,7 +150,7 @@ def export_csv(db: Session = Depends(get_db)):
     )
 
 
-@app.get("/api/export/markdown")
+@_api.get("/api/export/markdown")
 def export_markdown(db: Session = Depends(get_db)):
     content = crud.export_markdown(db)
     return PlainTextResponse(
@@ -134,3 +158,7 @@ def export_markdown(db: Session = Depends(get_db)):
         media_type="text/markdown",
         headers={"Content-Disposition": "attachment; filename=tasks.md"},
     )
+
+
+# Register the protected router last (after the public routes above)
+app.include_router(_api)
