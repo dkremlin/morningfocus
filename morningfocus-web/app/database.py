@@ -44,8 +44,26 @@ def get_db():
 
 
 def init_db() -> None:
-    """Create all tables if they don't exist yet."""
+    """Create all tables if they don't exist yet, and run column migrations."""
     if _is_sqlite:
         _default_db.parent.mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(bind=engine)
+    _migrate_columns()
+
+
+def _migrate_columns() -> None:
+    """Add columns that may be missing from older schema versions."""
+    from sqlalchemy import text
+    migrations = [
+        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_to VARCHAR DEFAULT 'all'",
+        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS private BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS email VARCHAR",
+    ]
+    with engine.connect() as conn:
+        for stmt in migrations:
+            try:
+                conn.execute(text(stmt))
+            except Exception:
+                pass
+        conn.commit()
 
