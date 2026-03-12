@@ -7,6 +7,7 @@ load_dotenv()  # reads morningfocus-web/.env automatically when running locally
 
 import csv
 import io
+import os
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -20,15 +21,14 @@ from app import crud, models
 from app.auth import require_auth
 from app.database import engine, get_db, init_db
 from app.parser import parse_add_string
-from app.schemas import BriefingOut, ParseResult, TaskCreate, TaskOut, TaskUpdate
+from app.schemas import BriefingOut, ParseResult, ProfileOut, TaskCreate, TaskOut, TaskUpdate
 
 app = FastAPI(title="MorningFocus", version="0.1.0")
 
 # Protected router — every route added here requires a valid Supabase token.
-# The two HTML pages (/ and /login) stay on `app` directly so they are public.
 _api = APIRouter(dependencies=[Depends(require_auth)])
 
-# Serve static assets (CSS, JS, images if any)
+# Serve static assets
 _static = Path(__file__).parent.parent / "static"
 app.mount("/static", StaticFiles(directory=_static), name="static")
 
@@ -39,7 +39,7 @@ def on_startup() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Frontend (public — no auth needed to load the HTML pages)
+# Frontend (public)
 # ---------------------------------------------------------------------------
 
 @app.get("/", response_class=FileResponse, include_in_schema=False)
@@ -54,9 +54,7 @@ def login_page():
 
 @app.get("/api/config", include_in_schema=False)
 def public_config():
-    """Return the public Supabase keys so the frontend can initialise the JS client.
-    The anon key is intentionally public — it is safe to expose in the browser."""
-    import os
+    """Return public Supabase keys so the frontend can initialise the JS client."""
     return {
         "supabase_url": os.environ.get("SUPABASE_URL", ""),
         "supabase_anon_key": os.environ.get("SUPABASE_ANON_KEY", ""),
@@ -64,25 +62,47 @@ def public_config():
 
 
 # ---------------------------------------------------------------------------
-# Tasks API  (protected)
+# Current user (registers profile on first call)
+# ---------------------------------------------------------------------------
+
+@_api.get("/api/me", response_model=ProfileOut)
+def get_me(
+    current_user: dict = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Called by the frontend on page load to register the user in the profiles table."""
+    return crud.upsert_profile(db, user_id=current_user["id"], email=current_user["email"])
+
+
+@_api.get("/api/users", response_model=list[ProfileOut])
+def list_users(db: Session = Depends(get_db)):
+    """Returns all registered users so the frontend can build the assign-to dropdown."""
+    return crud.get_profiles(db)
+
+
+# ---------------------------------------------------------------------------
+# Tasks API (protected)
 # ---------------------------------------------------------------------------
 
 @_api.get("/api/tasks", response_model=list[TaskOut])
 def list_tasks(
-    include_done: bool = Query(True, description="Include completed tasks"),
+    include_done: bool = Query(True),
+    current_user: dict = Depends(require_auth),
     db: Session = Depends(get_db),
 ):
-    return crud.get_tasks(db, include_done=include_done)
+    return crud.get_tasks(db, user_id=current_user["id"], include_done=include_done)
 
 
 @_api.post("/api/tasks", response_model=TaskOut, status_code=201)
-def add_task(task_in: TaskCreate, db: Session = Depends(get_db)):
+def add_task(
+    task_in: TaskCreate,
+    db: Session = Depends(get_db),
+):
     return crud.create_task(db, task_in)
 
 
 @_api.post("/api/tasks/parse", response_model=ParseResult)
 def parse_task(body: dict, db: Session = Depends(get_db)):
-    """Parse a free-text string into structured fields (live preview as you type)."""
     raw = body.get("text", "")
     try:
         return parse_add_string(raw)
@@ -121,13 +141,16 @@ def delete_task(task_id: int, db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
-# Briefing API  (protected)
+# Briefing API (protected)
 # ---------------------------------------------------------------------------
 
 @_api.get("/api/brief", response_model=BriefingOut)
-def briefing(db: Session = Depends(get_db)):
+def briefing(
+    current_user: dict = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
     today = date.today()
-    overdue, due_today, general = crud.get_briefing_tasks(db, today=today)
+    overdue, due_today, general = crud.get_briefing_tasks(db, user_id=current_user["id"], today=today)
     return BriefingOut(
         date=today,
         overdue=[TaskOut.model_validate(t) for t in overdue],
@@ -137,12 +160,15 @@ def briefing(db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
-# Export API  (protected)
+# Export API (protected)
 # ---------------------------------------------------------------------------
 
 @_api.get("/api/export/csv")
-def export_csv(db: Session = Depends(get_db)):
-    content = crud.export_csv(db)
+def export_csv(
+    current_user: dict = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    content = crud.export_csv(db, user_id=current_user["id"])
     return PlainTextResponse(
         content,
         media_type="text/csv",
@@ -151,8 +177,11 @@ def export_csv(db: Session = Depends(get_db)):
 
 
 @_api.get("/api/export/markdown")
-def export_markdown(db: Session = Depends(get_db)):
-    content = crud.export_markdown(db)
+def export_markdown(
+    current_user: dict = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    content = crud.export_markdown(db, user_id=current_user["id"])
     return PlainTextResponse(
         content,
         media_type="text/markdown",
@@ -160,5 +189,5 @@ def export_markdown(db: Session = Depends(get_db)):
     )
 
 
-# Register the protected router last (after the public routes above)
+# Register the protected router last
 app.include_router(_api)

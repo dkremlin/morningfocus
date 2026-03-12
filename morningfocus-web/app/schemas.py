@@ -15,6 +15,8 @@ class TaskCreate(BaseModel):
     description: str
     priority: Priority = "Medium"
     due: Optional[date] = None
+    assigned_to: str = "all"   # "all" or a user UUID
+    private: bool = False
 
     @field_validator("description")
     @classmethod
@@ -32,6 +34,8 @@ class TaskOut(BaseModel):
     due: Optional[date]
     done: bool
     created_at: datetime
+    assigned_to: str
+    private: bool
 
     model_config = {"from_attributes": True}
 
@@ -46,6 +50,8 @@ class BriefingOut(BaseModel):
 class TaskUpdate(BaseModel):
     due: Optional[date] = None
     priority: Optional[Priority] = None
+    assigned_to: Optional[str] = None
+    private: Optional[bool] = None
 
 
 class ParseResult(BaseModel):
@@ -53,3 +59,10 @@ class ParseResult(BaseModel):
     description: str
     priority: Priority
     due: Optional[date]
+
+
+class ProfileOut(BaseModel):
+    id: str
+    email: str
+
+    model_config = {"from_attributes": True}

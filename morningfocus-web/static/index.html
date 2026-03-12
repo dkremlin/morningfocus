@@ -272,6 +272,32 @@
   .empty-state p { font-size: 15px; margin-bottom: 4px; }
   .empty-state small { font-size: 12px; }
 
+  /* Assign badge */
+  .assign-badge {
+    display: inline-block;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    background: var(--surface2);
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .assign-badge.me { background: var(--accent-dim); border-color: var(--accent); color: #a5b4fc; }
+  .assign-badge.all { background: var(--surface2); border-color: var(--border); color: var(--muted); }
+
+  /* Private checkbox row */
+  .private-row {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .private-row.show { display: flex; }
+  .private-row input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+
   /* Export section */
   .export-bar { margin-top: 32px; display: flex; gap: 8px; align-items: center; }
   .export-bar span { color: var(--muted); font-size: 13px; }
@@ -381,7 +407,14 @@
           <option value="Low">Low</option>
         </select>
         <input type="date" class="due-input" id="dueInput">
+        <select class="priority-sel" id="assignSel" onchange="onAssignChange()">
+          <option value="all">Everyone</option>
+        </select>
         <button class="btn-primary" onclick="addTask()">+ Add</button>
+      </div>
+      <div class="private-row" id="privateRow">
+        <input type="checkbox" id="privateCheck">
+        <label for="privateCheck" style="text-transform:none;font-size:13px;color:var(--muted);cursor:pointer">Only visible to me</label>
       </div>
       <div class="hint">Tip: Tags in the text override the dropdowns. <code>/p:High</code> sets priority, <code>/d:2026-03-15</code> or <code>/d:tomorrow</code> sets due date.</div>
     </div>
@@ -396,6 +429,9 @@
       <button class="prio-chip"            id="prioHigh"   onclick="setPriorityFilter('High')">High</button>
       <button class="prio-chip"            id="prioMedium" onclick="setPriorityFilter('Medium')">Medium</button>
       <button class="prio-chip"            id="prioLow"    onclick="setPriorityFilter('Low')">Low</button>
+      <div class="filter-sep"></div>
+      <button class="tab-btn active" id="assignAll" onclick="setAssignFilter('all')">All people</button>
+      <button class="tab-btn"        id="assignMe"  onclick="setAssignFilter('me')">Mine</button>
     </div>
 
     <!-- Task list -->
@@ -406,6 +442,7 @@
           <th>Task</th>
           <th style="width:90px">Priority</th>
           <th style="width:110px">Due</th>
+          <th style="width:90px">Assigned</th>
           <th style="width:60px"></th>
         </tr>
       </thead>
@@ -471,8 +508,9 @@ async function initAuth() {
     return;   // stop the rest of the page from loading
   }
 
-  // 3. Store the access token so api() can attach it to every request.
+  // 3. Store the access token and user id.
   _authToken = session.access_token;
+  currentUserId = session.user.id;
 
   // 4. Keep the token fresh automatically (Supabase handles token refresh).
   _supabaseClient.auth.onAuthStateChange((_event, newSession) => {
@@ -498,9 +536,12 @@ async function logout() {
 // ---------------------------------------------------------------------------
 let allTasks = [];
 let filter = 'all';          // 'all' | 'open' | 'done'
-let priorityFilter = 'all';  // 'all' | 'High' | 'Medium' | 'Low'  (task 4.1)
+let priorityFilter = 'all';  // 'all' | 'High' | 'Medium' | 'Low'
+let assignFilter = 'all';    // 'all' | 'me'
 let currentView = 'tasks';   // 'tasks' | 'briefing'
 let parseDebounce = null;
+let currentUserId = null;    // Supabase UUID of the logged-in user
+let allUsers = [];           // [{id, email}] — for the assign dropdown
 
 // ---------------------------------------------------------------------------
 // View switching (tasks 2.3, 2.4)
@@ -632,6 +673,8 @@ function renderTasks() {
   if (filter === 'open') visible = visible.filter(t => !t.done);
   if (filter === 'done') visible = visible.filter(t => t.done);
   if (priorityFilter !== 'all') visible = visible.filter(t => t.priority === priorityFilter);
+  // "Mine" filter: only show tasks assigned to me or to everyone
+  if (assignFilter === 'me') visible = visible.filter(t => t.assigned_to === currentUserId || t.assigned_to === 'all');
 
   if (!visible.length) {
     tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state">
@@ -645,6 +688,7 @@ function renderTasks() {
     const dueBadge = dueBadgeHtml(t.due, today);
     const checked = t.done ? 'checked' : '';
     const doneClass = t.done ? 'is-done' : '';
+    const assignLabel = assignBadgeHtml(t.assigned_to, t.private);
     return `<tr class="task-row ${doneClass}" data-id="${t.id}">
       <td><button class="check-btn ${checked}" title="${t.done ? 'Reopen' : 'Mark done'}"
            onclick="toggleDone(${t.id}, ${t.done})"></button></td>
@@ -652,6 +696,7 @@ function renderTasks() {
       <td><span class="prio-badge prio-${t.priority}">${t.priority}</span></td>
       <td class="due-cell" onclick="editDue(${t.id}, ${JSON.stringify(t.due || '')})"
           title="Click to edit due date">${dueBadge}</td>
+      <td>${assignLabel}</td>
       <td><button class="btn-danger" onclick="deleteTask(${t.id})">✕</button></td>
     </tr>`;
   }).join('');
@@ -666,6 +711,18 @@ function dueBadgeHtml(due, today) {
   if (diff < 0)      { cls += ' due-overdue'; label += ' ⚠'; }
   else if (diff === 0) { cls += ' due-today'; label = 'Today'; }
   return `<span class="${cls}">${label}</span>`;
+}
+
+function assignBadgeHtml(assigned_to, isPrivate) {
+  if (assigned_to === 'all') return `<span class="assign-badge all">Everyone</span>`;
+  if (assigned_to === currentUserId) {
+    const label = isPrivate ? '🔒 Me' : 'Me';
+    return `<span class="assign-badge me">${label}</span>`;
+  }
+  // Another user — look up their email
+  const user = allUsers.find(u => u.id === assigned_to);
+  const label = user ? user.email.split('@')[0] : 'Other';
+  return `<span class="assign-badge">${esc(label)}</span>`;
 }
 
 function esc(s) {
@@ -741,17 +798,38 @@ async function addTask() {
     if (parsed.due) due = parsed.due;
   } catch(e) { /* use raw */ }
 
+  const assigned_to = document.getElementById('assignSel').value;
+  const private_task = assigned_to === currentUserId && document.getElementById('privateCheck').checked;
+
   try {
-    await api('POST', '/api/tasks', { description, priority, due: due || null });
+    await api('POST', '/api/tasks', { description, priority, due: due || null, assigned_to, private: private_task });
     document.getElementById('taskInput').value = '';
     document.getElementById('dueInput').value = '';
     document.getElementById('prioritySel').value = 'Medium';
+    document.getElementById('assignSel').value = 'all';
+    document.getElementById('privateCheck').checked = false;
+    document.getElementById('privateRow').classList.remove('show');
     setPreview('Type a task below. You can use tags: /p:High  /d:tomorrow', '');
     await refreshAll();
     showToast('Task added!', 'success');
   } catch(e) {
     showToast('Error: ' + e.message, 'error');
   }
+}
+
+// Show/hide the "Only visible to me" checkbox
+function onAssignChange() {
+  const val = document.getElementById('assignSel').value;
+  document.getElementById('privateRow').classList.toggle('show', val === currentUserId);
+  if (val !== currentUserId) document.getElementById('privateCheck').checked = false;
+}
+
+// Assign filter (All people / Mine)
+function setAssignFilter(f) {
+  assignFilter = f;
+  document.getElementById('assignAll').classList.toggle('active', f === 'all');
+  document.getElementById('assignMe').classList.toggle('active', f === 'me');
+  renderTasks();
 }
 
 // ---------------------------------------------------------------------------
@@ -855,13 +933,29 @@ function showToast(msg, type = '') {
 // ---------------------------------------------------------------------------
 // Init — auth first, then load data
 // ---------------------------------------------------------------------------
-initAuth().then(() => {
-  // initAuth redirects to /login if not authenticated, so if we reach here
-  // the user is logged in and _authToken is set.
-  if (_authToken !== null || !window._supabaseClient) {
-    refreshAll();
-  }
+initAuth().then(async () => {
+  if (_authToken === null && window._supabaseClient) return; // redirecting to login
+
+  // Register current user in the profiles table + fetch all users for dropdown
+  try {
+    await api('GET', '/api/me');
+    allUsers = await api('GET', '/api/users');
+    buildAssignDropdown();
+  } catch(e) { console.warn('Could not load users', e); }
+
+  refreshAll();
 });
+
+function buildAssignDropdown() {
+  const sel = document.getElementById('assignSel');
+  sel.innerHTML = '<option value="all">Everyone</option>';
+  allUsers.forEach(u => {
+    const opt = document.createElement('option');
+    opt.value = u.id;
+    opt.textContent = u.id === currentUserId ? 'Me (' + u.email + ')' : u.email.split('@')[0];
+    sel.appendChild(opt);
+  });
+}
 </script>
 </body>
 </html>
