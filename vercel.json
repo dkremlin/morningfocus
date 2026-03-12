@@ -1,0 +1,8 @@
+{
+  "builds": [
+    { "src": "morningfocus-web/api/index.py", "use": "@vercel/python" }
+  ],
+  "routes": [
+    { "src": "/(.*)", "dest": "morningfocus-web/api/index.py" }
+  ]
+}
