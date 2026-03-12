@@ -7,6 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.pool import NullPool, StaticPool
 
 # Default DB path; override with MORNINGFOCUS_DB env var.
 # On Vercel the project directory is read-only, so fall back to /tmp which is
@@ -25,7 +26,7 @@ _is_sqlite = DB_URL.startswith("sqlite")
 engine = create_engine(
     DB_URL,
     connect_args={"check_same_thread": False} if _is_sqlite else {},
-    pool_pre_ping=True,  # reconnects automatically if the connection drops
+    poolclass=StaticPool if _is_sqlite else NullPool,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
